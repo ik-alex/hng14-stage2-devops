@@ -363,3 +363,108 @@ jobs:
       - name: Tear down the stack
         if: always()
         run: docker compose down -v
+
+  # ====================== STAGE 6: DEPLOY ======================
+  deploy:
+    name: Deploy
+    needs: integration-test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    env:
+      REDIS_PASSWORD: ci-deploy-password
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: chmod +x scripts/*.sh
+
+      - name: Download image artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+          path: /tmp/images/
+
+      - name: Load images into Docker
+        run: |
+          for tar in /tmp/images/*.tar; do
+            docker load -i "$tar"
+          done
+
+      - name: Download SHA
+        uses: actions/download-artifact@v4
+        with:
+          name: sha
+
+      - name: Set SHORT_SHA env var
+        run: echo "SHORT_SHA=$(cat sha.txt)" >> $GITHUB_ENV
+
+      - name: Create Docker network
+        run: docker network create app-net
+
+      - name: Start Redis (dependency of api)
+        run: |
+          docker run -d \
+            --name redis-server \
+            --network app-net \
+            --health-cmd "redis-cli -a ${REDIS_PASSWORD} ping" \
+            --health-interval=5s \
+            --health-timeout=3s \
+            --health-retries=3 \
+            redis:7-alpine redis-server --requirepass "${REDIS_PASSWORD}"
+
+          # Wait for Redis to be ready
+          for i in $(seq 1 30); do
+            if [ "$(docker inspect --format='{{.State.Health.Status}}' redis-server)" = "healthy" ]; then
+              echo "Redis ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Redis failed to become healthy"
+          exit 1
+
+      - name: Simulate existing deployment (v1 of api)
+        run: |
+          echo "Starting 'old' api container (simulating previously deployed version)"
+          docker run -d \
+            --name api \
+            --network app-net \
+            -e REDIS_HOST=redis-server \
+            -e REDIS_PORT=6379 \
+            -e REDIS_PASSWORD="${REDIS_PASSWORD}" \
+            -p 8000:8000 \
+            localhost:5000/api:${SHORT_SHA}
+
+          echo "Waiting for old api to be healthy..."
+          for i in $(seq 1 30); do
+            if [ "$(docker inspect --format='{{.State.Health.Status}}' api)" = "healthy" ]; then
+              echo "Old api ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Old api failed to become healthy"
+          exit 1
+
+      - name: Run rolling update
+        run: |
+          ./scripts/deploy.sh \
+            localhost:5000/api:${SHORT_SHA} \
+            api \
+            8000 \
+            /healthz
+
+      - name: Verify new deployment
+        run: |
+          echo "Final container state:"
+          docker ps
+          echo ""
+          echo "Health status:"
+          docker inspect --format='{{.Name}}: {{.State.Health.Status}}' api
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker rm -f api api-new redis-server 2>/dev/null || true
+          docker network rm app-net 2>/dev/null || true
