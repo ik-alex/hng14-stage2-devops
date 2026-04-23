@@ -18,16 +18,17 @@ RUN npm prune --omit=dev
 # ---------- Stage 2: runtime ----------
 FROM node:20-alpine AS runtime
 
-# wget is already in alpine-base for healthchecks; if not, install curl
+# Install curl for HEALTHCHECK
 RUN apk add --no-cache curl
 
 WORKDIR /app
 
 # Create non-root user (alpine syntax)
-RUN addgroup -g 1000 -S appuser && \
-    adduser -u 1000 -S -G appuser -s /bin/sh appuser
+# Using UID 1001 because the base image's 'node' user already occupies UID 1000
+RUN addgroup -g 1001 -S appuser && \
+    adduser -u 1001 -S -G appuser -s /bin/sh appuser
 
-# node:alpine ships a "appuser" user (uid 1000) — use it
+# Copy built artifacts from the builder stage, owned by appuser
 COPY --from=builder --chown=appuser:appuser /build/node_modules ./node_modules
 COPY --from=builder --chown=appuser:appuser /build/app.js ./app.js
 COPY --from=builder --chown=appuser:appuser /build/views ./views
