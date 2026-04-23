@@ -102,3 +102,79 @@ jobs:
             api/htmlcov/
             api/coverage.xml
           retention-days: 30
+
+  # ====================== STAGE 3: BUILD ======================
+  build:
+    name: Build
+    needs: test
+    runs-on: ubuntu-latest
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
+
+      - name: Set short SHA
+        id: sha
+        run: echo "short=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Build and push api image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./api
+          push: true
+          tags: |
+            localhost:5000/api:${{ steps.sha.outputs.short }}
+            localhost:5000/api:latest
+
+      - name: Build and push worker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./worker
+          push: true
+          tags: |
+            localhost:5000/worker:${{ steps.sha.outputs.short }}
+            localhost:5000/worker:latest
+
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./frontend
+          push: true
+          tags: |
+            localhost:5000/frontend:${{ steps.sha.outputs.short }}
+            localhost:5000/frontend:latest
+
+      - name: Save images as tarballs
+        run: |
+          mkdir -p /tmp/images
+          for svc in api worker frontend; do
+            docker pull localhost:5000/$svc:${{ steps.sha.outputs.short }}
+            docker save localhost:5000/$svc:${{ steps.sha.outputs.short }} -o /tmp/images/$svc.tar
+          done
+          ls -lh /tmp/images/
+
+      - name: Upload image tarballs
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-images
+          path: /tmp/images/
+          retention-days: 1
+
+      - name: Save short SHA for downstream jobs
+        run: echo "${{ steps.sha.outputs.short }}" > sha.txt
+
+      - name: Upload SHA
+        uses: actions/upload-artifact@v4
+        with:
+          name: sha
+          path: sha.txt
+          retention-days: 1
