@@ -62,3 +62,43 @@ jobs:
         uses: hadolint/hadolint-action@v3.1.0
         with:
           dockerfile: frontend/Dockerfile
+
+  # ====================== STAGE 2: TEST ======================
+  test:
+    name: Test
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: api
+        run: |
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+
+      - name: Run pytest with coverage
+        working-directory: api
+        run: |
+          pytest tests/ \
+            --cov=. \
+            --cov-report=xml \
+            --cov-report=html \
+            --cov-report=term \
+            --cov-fail-under=70
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            api/htmlcov/
+            api/coverage.xml
+          retention-days: 30
