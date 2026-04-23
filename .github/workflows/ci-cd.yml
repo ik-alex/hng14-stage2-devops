@@ -289,7 +289,7 @@ jobs:
     needs: security-scan
     runs-on: ubuntu-latest
     env:
-      REDIS_PASSWORD: ci-integration-test-password
+      REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -371,7 +371,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     env:
-      REDIS_PASSWORD: ci-deploy-password
+      REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
