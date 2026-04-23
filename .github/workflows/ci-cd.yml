@@ -282,3 +282,84 @@ jobs:
           name: trivy-sarif
           path: trivy-*.sarif
           retention-days: 30
+
+  # ====================== STAGE 5: INTEGRATION TEST ======================
+  integration-test:
+    name: Integration Test
+    needs: security-scan
+    runs-on: ubuntu-latest
+    env:
+      REDIS_PASSWORD: ci-integration-test-password
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download image artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+          path: /tmp/images/
+
+      - name: Load images into Docker
+        run: |
+          for tar in /tmp/images/*.tar; do
+            docker load -i "$tar"
+          done
+          docker images
+
+      - name: Download SHA
+        uses: actions/download-artifact@v4
+        with:
+          name: sha
+
+      - name: Set SHORT_SHA env var
+        run: echo "SHORT_SHA=$(cat sha.txt)" >> $GITHUB_ENV
+
+      - name: Create compose override using built images
+        run: |
+          cat > docker-compose.override.yml <<EOF
+          services:
+            api:
+              image: localhost:5000/api:${SHORT_SHA}
+              pull_policy: never
+              build: null
+            worker:
+              image: localhost:5000/worker:${SHORT_SHA}
+              pull_policy: never
+              build: null
+            frontend:
+              image: localhost:5000/frontend:${SHORT_SHA}
+              pull_policy: never
+              build: null
+          EOF
+          cat docker-compose.override.yml
+
+      - name: Start the stack
+        run: docker compose up -d
+
+      - name: Wait for services to become healthy
+        run: |
+          echo "Waiting for services to become healthy..."
+          for i in $(seq 1 30); do
+            API_HEALTHY=$(docker inspect --format='{{.State.Health.Status}}' $(docker compose ps -q api) 2>/dev/null || echo "starting")
+            FRONTEND_UP=$(curl -sf http://localhost:3000/ > /dev/null 2>&1 && echo "yes" || echo "no")
+            echo "  Attempt $i/30: api=$API_HEALTHY frontend=$FRONTEND_UP"
+            if [ "$API_HEALTHY" = "healthy" ] && [ "$FRONTEND_UP" = "yes" ]; then
+              echo "All services healthy"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Services failed to become healthy within 60 seconds"
+          exit 1
+
+      - name: Run integration test
+        run: ./scripts/integration-test.sh
+
+      - name: Show compose logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Tear down the stack
+        if: always()
+        run: docker compose down -v
