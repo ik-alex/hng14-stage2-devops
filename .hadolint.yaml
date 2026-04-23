@@ -1,0 +1,5 @@
+ignored:
+  - DL3008  # Pin apt-get package versions
+  - DL3013  # Pin pip versions
+  - DL3018  # Pin apk package versions
+  - DL3059  # Multiple consecutive RUN commands
