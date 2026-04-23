@@ -178,3 +178,71 @@ jobs:
           name: sha
           path: sha.txt
           retention-days: 1
+
+  # ====================== STAGE 4: SECURITY SCAN ======================
+  security-scan:
+    name: Security Scan
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download image artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-images
+          path: /tmp/images/
+
+      - name: Load images into Docker
+        run: |
+          for tar in /tmp/images/*.tar; do
+            docker load -i "$tar"
+          done
+          docker images
+
+      - name: Download SHA
+        uses: actions/download-artifact@v4
+        with:
+          name: sha
+
+      - name: Set SHORT_SHA env var
+        run: echo "SHORT_SHA=$(cat sha.txt)" >> $GITHUB_ENV
+
+      - name: Scan api image with Trivy
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: localhost:5000/api:${{ env.SHORT_SHA }}
+          format: sarif
+          output: trivy-api.sarif
+          severity: CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Scan worker image with Trivy
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: localhost:5000/worker:${{ env.SHORT_SHA }}
+          format: sarif
+          output: trivy-worker.sarif
+          severity: CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Scan frontend image with Trivy
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: localhost:5000/frontend:${{ env.SHORT_SHA }}
+          format: sarif
+          output: trivy-frontend.sarif
+          severity: CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+
+      - name: Upload SARIF results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trivy-sarif
+          path: trivy-*.sarif
+          retention-days: 30
