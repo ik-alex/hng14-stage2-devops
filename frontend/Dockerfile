@@ -23,13 +23,17 @@ RUN apk add --no-cache curl
 
 WORKDIR /app
 
-# node:alpine ships a "node" user (uid 1000) — use it
-COPY --from=builder --chown=node:node /build/node_modules ./node_modules
-COPY --from=builder --chown=node:node /build/app.js ./app.js
-COPY --from=builder --chown=node:node /build/views ./views
-COPY --from=builder --chown=node:node /build/package*.json ./
+# Create non-root user (alpine syntax)
+RUN addgroup -g 1000 -S appuser && \
+    adduser -u 1000 -S -G appuser -s /bin/sh appuser
 
-USER node
+# node:alpine ships a "appuser" user (uid 1000) — use it
+COPY --from=builder --chown=appuser:appuser /build/node_modules ./node_modules
+COPY --from=builder --chown=appuser:appuser /build/app.js ./app.js
+COPY --from=builder --chown=appuser:appuser /build/views ./views
+COPY --from=builder --chown=appuser:appuser /build/package*.json ./
+
+USER appuser
 
 ENV NODE_ENV=production
 

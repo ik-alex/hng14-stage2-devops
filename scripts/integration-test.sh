@@ -3,15 +3,16 @@ set -euo pipefail
 
 # =====================================================
 # Integration test: submit a job via frontend, verify
-# it reaches "completed" status within the timeout.
+# it reaches "completed" status within 60 seconds.
 # =====================================================
 
 FRONTEND_URL="http://localhost:3000"
-MAX_ATTEMPTS=30
+TIMEOUT_SECONDS=60
 SLEEP_SECONDS=2
+MAX_ATTEMPTS=$((TIMEOUT_SECONDS / SLEEP_SECONDS))
 
 echo "=========================================="
-echo "Integration test starting"
+echo "Integration test starting (timeout: ${TIMEOUT_SECONDS}s)"
 echo "=========================================="
 
 # Step 1: Submit a job
@@ -29,7 +30,7 @@ fi
 
 echo "Created job: ${JOB_ID}"
 
-# Step 2: Poll for completion
+# Step 2: Poll for completion with timeout
 echo ""
 echo "[2/3] Polling ${FRONTEND_URL}/status/${JOB_ID} for completion..."
 
@@ -40,7 +41,7 @@ for i in $(seq 1 ${MAX_ATTEMPTS}); do
 
   if [ "${STATUS}" = "completed" ]; then
     echo ""
-    echo "[3/3] ✅ Job completed successfully."
+    echo "[3/3] Job completed successfully."
     echo "=========================================="
     echo "Integration test PASSED"
     echo "=========================================="
@@ -50,9 +51,6 @@ for i in $(seq 1 ${MAX_ATTEMPTS}); do
   if [ "${STATUS}" = "failed" ]; then
     echo ""
     echo "ERROR: Job status is 'failed' — worker reported an error"
-    echo "=========================================="
-    echo "Integration test FAILED"
-    echo "=========================================="
     exit 1
   fi
 
@@ -60,7 +58,7 @@ for i in $(seq 1 ${MAX_ATTEMPTS}); do
 done
 
 echo ""
-echo "ERROR: Job did not reach 'completed' status within $((MAX_ATTEMPTS * SLEEP_SECONDS)) seconds"
+echo "ERROR: Job did not reach 'completed' status within ${TIMEOUT_SECONDS} seconds (timeout)"
 echo "=========================================="
 echo "Integration test FAILED (timeout)"
 echo "=========================================="

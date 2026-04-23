@@ -20,8 +20,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create a non-root user
-RUN useradd -m -u 1000 appuser
+# Create non-root user with explicit group
+RUN groupadd --gid 1000 appuser && \
+    useradd --uid 1000 --gid appuser --create-home --shell /bin/bash appuser
 
 WORKDIR /app
 

@@ -120,9 +120,11 @@ jobs:
         with:
           driver-opts: network=host
 
-      - name: Set short SHA
+      - name: Set SHA tags
         id: sha
-        run: echo "short=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+        run: |
+          echo "short=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          echo "full=${GITHUB_SHA}" >> $GITHUB_OUTPUT
 
       - name: Build and push api image
         uses: docker/build-push-action@v5
@@ -130,8 +132,11 @@ jobs:
           context: ./api
           push: true
           tags: |
+            localhost:5000/api:${{ github.sha }}
             localhost:5000/api:${{ steps.sha.outputs.short }}
             localhost:5000/api:latest
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
 
       - name: Build and push worker image
         uses: docker/build-push-action@v5
@@ -139,8 +144,11 @@ jobs:
           context: ./worker
           push: true
           tags: |
+            localhost:5000/worker:${{ github.sha }}
             localhost:5000/worker:${{ steps.sha.outputs.short }}
             localhost:5000/worker:latest
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
 
       - name: Build and push frontend image
         uses: docker/build-push-action@v5
@@ -148,8 +156,11 @@ jobs:
           context: ./frontend
           push: true
           tags: |
+            localhost:5000/frontend:${{ github.sha }}
             localhost:5000/frontend:${{ steps.sha.outputs.short }}
             localhost:5000/frontend:latest
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
 
       - name: Save images as tarballs
         run: |
